@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  PRIXI design tokens — "void & volt"
+  ------------------------------------
+  Background reads as near-black with a faint cold-violet undertone
+  (not pure neutral gray) so surfaces feel deliberate, not default-dark-mode.
+  Primary accent (volt) is reserved for primary actions and active states.
+  XP accent (amber) is reserved exclusively for progression/level-up moments
+  so it keeps its meaning instead of becoming a second decorative accent.
+
+  Values are R G B triplets (no commas) to work with Tailwind's
+  rgb(var(--x) / <alpha-value>) opacity pattern.
+*/
+:root {
+  --color-background: 10 10 15; /* #0A0A0F */
+  --color-surface: 20 20 28; /* #14141C */
+  --color-surface-elevated: 28 28 40; /* #1C1C28 */
+  --color-border: 42 42 56; /* #2A2A38 */
+
+  --color-primary: 124 92 252; /* #7C5CFC */
+  --color-primary-hover: 144 116 255; /* #9074FF */
+
+  --color-xp: 242 183 5; /* #F2B705 */
+  --color-danger: 239 68 68; /* #EF4444 */
+
+  --color-text-primary: 244 244 245; /* #F4F4F5 */
+  --color-text-muted: 161 161 170; /* #A1A1AA */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers (XP, stats, weights, reps) always render in mono so they
+   feel like instrumentation rather than prose. */
+.stat-figure {
+  font-family: theme('fontFamily.mono');
+  font-feature-settings: 'tnum';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
