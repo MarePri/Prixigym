@@ -16,3 +16,6 @@ dev-dist
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
+
+# AI assistant working directory
+.opencode/

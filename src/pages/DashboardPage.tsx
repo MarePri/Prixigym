@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { Flame } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { TelemetryCard } from '@/components/ui/TelemetryCard'
@@ -9,6 +10,8 @@ import {
 } from '@/mock/dashboardMock'
 
 export function DashboardPage() {
+  const navigate = useNavigate()
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -29,6 +32,7 @@ export function DashboardPage() {
 
       <button
         type="button"
+        onClick={() => navigate('/training')}
         className="group relative flex items-center justify-between overflow-hidden rounded-card border border-primary/40 bg-primary px-5 py-4 text-left shadow-glow transition-transform active:scale-[0.98]"
       >
         <div>
@@ -49,7 +53,7 @@ export function DashboardPage() {
           unit="/ 100"
           accent="primary"
           trend={mockRecovery.trend}
-          footnote="Placeholder"
+          footnote="Fatigue-based readiness"
         />
         <TelemetryCard
           label="Strength"
