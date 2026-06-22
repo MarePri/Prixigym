@@ -1,50 +1,94 @@
+import { AnimatePresence } from 'framer-motion'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
+import { PageTransition } from '@/components/layout/PageTransition'
 import { LoginForm } from '@/features/auth/components/LoginForm'
 import { useAuth } from '@/features/auth/hooks/useAuth'
 import { AuthProvider } from '@/providers/AuthProvider'
+import { DashboardPage } from '@/pages/DashboardPage'
+import { ProgressPage } from '@/pages/ProgressPage'
+import { SettingsPage } from '@/pages/SettingsPage'
+import { TrainingPage } from '@/pages/TrainingPage'
+
+function AnimatedRoutes() {
+  const location = useLocation()
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        <Route
+          path="/"
+          element={
+            <PageTransition>
+              <DashboardPage />
+            </PageTransition>
+          }
+        />
+        <Route
+          path="/training"
+          element={
+            <PageTransition>
+              <TrainingPage />
+            </PageTransition>
+          }
+        />
+        <Route
+          path="/progress"
+          element={
+            <PageTransition>
+              <ProgressPage />
+            </PageTransition>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <PageTransition>
+              <SettingsPage />
+            </PageTransition>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AnimatePresence>
+  )
+}
 
 function AppContent() {
-  const { user, loading, signOut } = useAuth()
+  const { user, loading } = useAuth()
 
   if (loading) {
-    return <p className="text-sm text-text-muted">Loading…</p>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-text-muted">Loading…</p>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center bg-background px-4">
+        <h1 className="mb-6 font-display text-xl font-semibold text-text-primary">
+          Sign in to PRIXI
+        </h1>
+        <LoginForm />
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-display text-xl font-semibold text-text-primary">
-          Foundation ready
-        </h1>
-        <p className="mt-1 text-sm text-text-muted">
-          Architecture, theme, and auth scaffold are in place. Feature modules land in
-          later phases.
-        </p>
-      </div>
-
-      {user ? (
-        <div className="rounded-card border border-border bg-surface p-4">
-          <p className="text-sm text-text-primary">Signed in as {user.email}</p>
-          <button
-            onClick={() => void signOut()}
-            className="mt-3 text-sm font-medium text-primary"
-          >
-            Sign out
-          </button>
-        </div>
-      ) : (
-        <LoginForm />
-      )}
-    </div>
+    <AppShell>
+      <AnimatedRoutes />
+    </AppShell>
   )
 }
 
 export function App() {
   return (
     <AuthProvider>
-      <AppShell>
+      <BrowserRouter>
         <AppContent />
-      </AppShell>
+      </BrowserRouter>
     </AuthProvider>
   )
 }

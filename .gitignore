@@ -11,3 +11,8 @@ dist-ssr
 
 # vite-plugin-pwa generated files
 dev-dist
+
+# tsc build artifacts
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
