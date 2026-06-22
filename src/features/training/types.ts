@@ -8,6 +8,8 @@ export type WorkoutType = 'strength' | 'hypertrophy' | 'recovery' | 'athletic'
 
 export type UserGoal = 'strength' | 'hypertrophy' | 'athletic' | 'general'
 
+export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced'
+
 /** The intensity / loading zone for a given exercise within a workout type. */
 export type IntensityZone = 'low' | 'moderate' | 'high'
 
@@ -66,4 +68,22 @@ export interface TrainingInput {
   userGoal: UserGoal
   fatigueScore: number  // 0 – 100
   streakCount: number
+}
+
+/* ── Agent-powered workout extensions ────────── */
+
+export interface AgentInsight {
+  agentId: string
+  agentName: string
+  insight: string
+}
+
+/**
+ * Extended workout returned when the agent system is used.
+ * Includes the fusion result and per-agent explanations.
+ */
+export interface AgentDrivenWorkout extends GeneratedWorkout {
+  subtitle: string
+  insights: AgentInsight[]
+  agentSummary: string
 }

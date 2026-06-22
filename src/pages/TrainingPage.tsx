@@ -11,9 +11,11 @@ import {
   CheckCircle2,
   Loader2,
   AlertCircle,
+  BrainCircuit,
+  Target,
 } from 'lucide-react'
 import { useTrainingEngine } from '@/features/training/hooks/useTrainingEngine'
-import type { GeneratedWorkout, WorkoutPhase, WorkoutType } from '@/features/training/types'
+import type { AgentDrivenWorkout, WorkoutPhase, WorkoutType } from '@/features/training/types'
 import { getMovementById } from '@/features/training/data/movements'
 import { cn } from '@/lib/utils'
 
@@ -53,6 +55,29 @@ function WorkoutTypeBadge({ type }: { type: WorkoutType }) {
       <Icon className="h-3.5 w-3.5" strokeWidth={2.5} />
       {meta.label}
     </span>
+  )
+}
+
+/* ═══════════════════════════════════════════════
+ *  AGENT INSIGHT CARD
+ *  ═══════════════════════════════════════════════ */
+
+function AgentInsightCard({
+  agentName,
+  insight,
+}: {
+  agentName: string
+  insight: string
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-3.5 py-2.5 text-xs leading-relaxed text-text-primary',
+      )}
+    >
+      <span className="font-semibold text-primary">{agentName}</span>
+      <span className="text-text-muted"> — {insight}</span>
+    </div>
   )
 }
 
@@ -156,10 +181,10 @@ function PhaseSection({ phase, defaultOpen }: { phase: WorkoutPhase; defaultOpen
 }
 
 /* ═══════════════════════════════════════════════
- *  WORKOUT CARD (full generated workout)
+ *  WORKOUT CARD (agent-driven workout)
  *  ═══════════════════════════════════════════════ */
 
-function WorkoutCard({ workout }: { workout: GeneratedWorkout }) {
+function WorkoutCard({ workout }: { workout: AgentDrivenWorkout }) {
   return (
     <div className="flex flex-col gap-3">
       {/* Header */}
@@ -173,10 +198,40 @@ function WorkoutCard({ workout }: { workout: GeneratedWorkout }) {
         </span>
       </div>
 
-      {/* Title */}
-      <h2 className="font-display text-lg font-semibold text-text-primary">
-        {workout.title}
-      </h2>
+      {/* Title + Subtitle */}
+      <div>
+        <h2 className="font-display text-lg font-semibold text-text-primary">
+          {workout.title}
+        </h2>
+        {workout.subtitle && (
+          <p className="mt-0.5 text-xs text-text-muted">{workout.subtitle}</p>
+        )}
+      </div>
+
+      {/* Agent Summary */}
+      {workout.agentSummary && (
+        <div className="flex items-start gap-2.5 rounded-card border border-primary/20 bg-primary/5 px-4 py-3">
+          <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-primary" strokeWidth={2} />
+          <p className="text-xs leading-relaxed text-text-primary">{workout.agentSummary}</p>
+        </div>
+      )}
+
+      {/* Agent Insights */}
+      {workout.insights.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+            <Target className="h-3.5 w-3.5" strokeWidth={2} />
+            Agent Insights
+          </div>
+          {workout.insights.map((item, i) => (
+            <AgentInsightCard
+              key={`${item.agentId}-${i}`}
+              agentName={item.agentName}
+              insight={item.insight}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Phases */}
       {workout.phases.map((phase, i) => (
@@ -236,12 +291,12 @@ export function TrainingPage() {
       >
         <div>
           <p className="font-display text-lg font-bold tracking-wide text-white">
-            {isSaving ? 'Generating…' : 'TRAIN TODAY'}
+            {isSaving ? 'Agents are analysing…' : 'TRAIN TODAY'}
           </p>
           <p className="mt-0.5 text-sm text-white/80">
             {currentWorkout
               ? `${currentWorkout.title} · ~${currentWorkout.estimatedMinutes} min`
-              : 'Generate a workout based on your readiness'}
+              : '6 AI agents analyse your readiness'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -281,10 +336,10 @@ export function TrainingPage() {
       {/* Empty state */}
       {!currentWorkout && !isSaving && (
         <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-border bg-surface px-6 py-12 text-center">
-          <Dumbbell className="h-8 w-8 text-text-muted" strokeWidth={1.5} />
+          <BrainCircuit className="h-8 w-8 text-text-muted" strokeWidth={1.5} />
           <p className="text-sm text-text-muted">
-            Tap <span className="font-semibold text-text-primary">TRAIN TODAY</span> to generate
-            a personalised session based on your fatigue, streak, and goals.
+            Tap <span className="font-semibold text-text-primary">TRAIN TODAY</span> to activate
+            your 6-agent coaching team — Coach, Recovery, Progression, Habit, Physique &amp; Athlete.
           </p>
         </div>
       )}

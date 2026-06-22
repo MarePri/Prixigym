@@ -1,7 +1,7 @@
 /** ───────────────────────────────────────────────
  *  PRIXI V2 — useTrainingEngine Hook
  *
- *  Wraps the deterministic engine AND Firestore persistence
+ *  Wraps the agent-driven engine AND Firestore persistence
  *  so pages only need to call `generate` and read `currentWorkout`.
  *  ─────────────────────────────────────────────── */
 
@@ -10,11 +10,11 @@ import { useAuth } from '@/features/auth/hooks/useAuth'
 import { generateWorkout } from '../engine/trainingEngine'
 import { saveWorkout } from '../services/trainingService'
 import { mockStreak } from '@/mock/dashboardMock'
-import type { GeneratedWorkout, TrainingInput, UserGoal } from '../types'
+import type { AgentDrivenWorkout, TrainingInput, UserGoal } from '../types'
 
 interface UseTrainingEngineReturn {
   /** The most recently generated workout (null before first generate). */
-  currentWorkout: GeneratedWorkout | null
+  currentWorkout: AgentDrivenWorkout | null
   /** True while saving to Firestore. */
   isSaving: boolean
   /** Error message if something went wrong. */
@@ -30,7 +30,7 @@ interface UseTrainingEngineReturn {
 
 export function useTrainingEngine(): UseTrainingEngineReturn {
   const { user } = useAuth()
-  const [currentWorkout, setCurrentWorkout] = useState<GeneratedWorkout | null>(null)
+  const [currentWorkout, setCurrentWorkout] = useState<AgentDrivenWorkout | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,7 +54,7 @@ export function useTrainingEngine(): UseTrainingEngineReturn {
           ...overrides,
         }
 
-        // Generate deterministically
+        // Generate using the Multi-Agent AI system
         const workout = generateWorkout(input)
         setCurrentWorkout(workout)
 

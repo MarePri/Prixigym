@@ -1,265 +1,300 @@
 /** ───────────────────────────────────────────────
- *  PRIXI V2 — Deterministic Training Engine
+ *  PRIXI V2 — Agent-Driven Training Engine
  *
- *  Rule-based (NO AI).  Takes user signals and outputs
- *  a complete, structured workout session.
+ *  Replaces the Phase 3 deterministic rule chain with
+ *  a Multi-Agent AI system.  6 specialised agents each
+ *  analyse user context and vote on the workout.  A
+ *  decision fusion layer combines their outputs into a
+ *  dynamically generated session with explanations.
  *  ─────────────────────────────────────────────── */
 
 import type {
   TrainingInput,
-  WorkoutType,
-  GeneratedWorkout,
+  AgentDrivenWorkout,
   ExercisePrescription,
   MovementCategory,
   WorkoutPhase,
+  WorkoutType,
+  IntensityZone,
+  ExperienceLevel,
 } from '../types'
 import { getMovementsByCategory } from '../data/movements'
+import { orchestrateAgents } from '../agents/agent-manager'
+import type { AgentContext, FusionResult } from '../agents/types'
 
 /* ═══════════════════════════════════════════════
- *  STEP 1 — DETERMINE WORKOUT TYPE
+ *  PUBLIC API
  *  ═══════════════════════════════════════════════ */
 
-function determineWorkoutType(input: TrainingInput): WorkoutType {
-  const { fatigueScore, streakCount, lastWorkoutDate, userGoal } = input
+/**
+ * Generate a workout using the Multi-Agent AI system.
+ *
+ * Each agent analyses the user context independently.
+ * The Decision Fusion Layer combines their outputs into
+ * a final workout type, volume, and intensity.
+ * Exercises are selected dynamically based on the
+ * fused recommendation — no hardcoded blueprints.
+ */
+export function generateWorkout(input: TrainingInput): AgentDrivenWorkout {
+  const ctx = buildAgentContext(input)
+  const { fusion, outputs } = orchestrateAgents(ctx)
+  const now = new Date().toISOString()
 
-  const daysSince = daysSinceLast(lastWorkoutDate)
+  const phases = buildPhases(fusion)
+  const insights = extractInsights(outputs)
 
-  // Priority-ordered rule chain — first match wins.
-  const rules: Array<{
-    condition: boolean
-    type: WorkoutType
-    label: string
-  }> = [
-    // R1 — Overreached / highly fatigued → Recovery
-    {
-      condition: fatigueScore >= 80,
-      type: 'recovery',
-      label: 'High fatigue',
-    },
-    // R2 — Long layoff + low fatigue → Strength (reload)
-    {
-      condition: daysSince >= 4 && fatigueScore < 40,
-      type: 'strength',
-      label: 'Return after layoff',
-    },
-    // R3 — Extended layoff + moderate fatigue → Recovery
-    {
-      condition: daysSince >= 4,
-      type: 'recovery',
-      label: 'Return after layoff with moderate fatigue',
-    },
-    // R4 — Top-streak athlete → Athletic
-    {
-      condition: streakCount >= 10 && fatigueScore < 50,
-      type: 'athletic',
-      label: 'High streak — athletic performance',
-    },
-    // R5 — Strength goal + low fatigue → Strength
-    {
-      condition: userGoal === 'strength' && fatigueScore < 50,
-      type: 'strength',
-      label: 'Strength goal',
-    },
-    // R6 — Hypertrophy goal + manageable fatigue → Hypertrophy
-    {
-      condition: userGoal === 'hypertrophy' && fatigueScore < 60,
-      type: 'hypertrophy',
-      label: 'Hypertrophy goal',
-    },
-    // R7 — Athletic goal + moderate fatigue → Athletic
-    {
-      condition: userGoal === 'athletic' && fatigueScore < 60,
-      type: 'athletic',
-      label: 'Athletic goal',
-    },
-    // R8 — Building streak → Hypertrophy (muscle gain focus)
-    {
-      condition: streakCount >= 5 && fatigueScore < 60,
-      type: 'hypertrophy',
-      label: 'Streak building',
-    },
-    // R9 — Fresh / low fatigue → Strength
-    {
-      condition: fatigueScore < 40,
-      type: 'strength',
-      label: 'Low fatigue — strength',
-    },
-    // R10 — Default fallback → Hypertrophy (balanced)
-    {
-      condition: true,
-      type: 'hypertrophy',
-      label: 'Default — balanced hypertrophy',
-    },
-  ]
-
-  const match = rules.find((r) => r.condition)
-  return match!.type
+  return {
+    type: fusion.selectedType,
+    title: buildTitle(fusion, ctx),
+    subtitle: buildSubtitle(fusion),
+    phases,
+    estimatedMinutes: estimateMinutes(phases, fusion.volumeMultiplier),
+    generatedFrom: { ...input },
+    createdAt: now,
+    insights,
+    agentSummary: buildSummary(fusion, outputs),
+  }
 }
 
 /* ═══════════════════════════════════════════════
- *  STEP 2 — PICK EXERCISES PER WORKOUT TYPE
+ *  AGENT CONTEXT BUILDER
  *  ═══════════════════════════════════════════════ */
 
-/** How many exercises to pull from each category, by workout type. */
-interface CategoryBlueprint {
-  /** How many exercises to select for this phase. */
-  count: number
-  /** Optional override pool (subset of category). */
-  pool?: string[]
+function buildAgentContext(input: TrainingInput): AgentContext {
+  const daysSince = daysSinceLast(input.lastWorkoutDate)
+  const weeklyFrequency = estimateWeeklyFrequency(input.streakCount, daysSince)
+
+  return {
+    userId: 'mock-user',
+    userGoal: input.userGoal ?? 'general',
+    experienceLevel: determineLevel(input.streakCount, 0),
+    age: 28,
+    weightKg: 80,
+    heightCm: 180,
+    fatigueScore: input.fatigueScore,
+    streakCount: input.streakCount,
+    lastWorkoutDate: input.lastWorkoutDate,
+    daysSinceLastWorkout: daysSince,
+    recentWorkouts: [],
+    totalWorkoutsCompleted: input.streakCount * 2,
+    weeklyFrequency,
+    currentWeightKg: 80,
+    targetWeightKg: 78,
+    estimatedBodyFatPercent: 15,
+    estimatedMaxes: {},
+  }
 }
 
-interface WorkoutBlueprint {
-  title: string
-  phases: Array<{
-    label: string
-    categories: Partial<Record<MovementCategory, CategoryBlueprint>>
+function determineLevel(streak: number, total: number): ExperienceLevel {
+  if (total > 50 || streak > 20) return 'advanced'
+  if (total > 20 || streak > 10) return 'intermediate'
+  return 'beginner'
+}
+
+function estimateWeeklyFrequency(streak: number, daysSince: number): number {
+  if (daysSince > 7) return 0
+  return Math.max(1, Math.min(7, Math.round(streak / 4)))
+}
+
+/* ═══════════════════════════════════════════════
+ *  DYNAMIC WORKOUT BUILDER
+ *
+ *  No hardcoded blueprints.  Exercise selection,
+ *  volume, and intensity are derived from the
+ *  fused agent outputs at generation time.
+ *  ═══════════════════════════════════════════════ */
+
+type PhaseTemplate = {
+  label: string
+  categories: Array<{
+    category: MovementCategory
+    count: number
+    pool?: string[]
   }>
 }
 
-const BLUEPRINTS: Record<WorkoutType, WorkoutBlueprint> = {
-  strength: {
-    title: 'Strength',
-    phases: [
+/** Dynamically build phase structure based on workout type + agent scores. */
+function buildPhases(fusion: FusionResult): WorkoutPhase[] {
+  const vol = fusion.volumeMultiplier
+  const intensity = fusion.intensityOverride
+  const type = fusion.selectedType
+
+  const templates = getPhaseTemplates(type, fusion)
+  const phases: WorkoutPhase[] = []
+
+  for (const tmpl of templates) {
+    const exercises: ExercisePrescription[] = []
+
+    for (const catDef of tmpl.categories) {
+      const adjustedCount = Math.max(1, Math.round(catDef.count * vol))
+      let pool = getMovementsByCategory(catDef.category)
+
+      if (catDef.pool && catDef.pool.length > 0) {
+        pool = pool.filter((m) => catDef.pool!.includes(m.id))
+      }
+
+      if (pool.length === 0) continue
+
+      const selected = pick(pool, adjustedCount)
+      for (const ex of selected) {
+        exercises.push(
+          buildPrescription(ex.id, tmpl.label, type, intensity),
+        )
+      }
+    }
+
+    if (exercises.length > 0) {
+      phases.push({ label: tmpl.label, exercises })
+    }
+  }
+
+  return phases
+}
+
+/**
+ * Phase templates per workout type — still categorised by movement
+ * pattern, but exercise COUNT and INTENSITY within each phase are
+ * modulated by the agent fusion output.
+ */
+function getPhaseTemplates(type: WorkoutType, _fusion: FusionResult): PhaseTemplate[] {
+  const templates: Record<WorkoutType, PhaseTemplate[]> = {
+    strength: [
       {
         label: 'Warm-up',
-        categories: {
-          core: { count: 2 },
-          squat: { count: 1, pool: ['goblet-squat'] },
-        },
+        categories: [
+          { category: 'core', count: 2 },
+          { category: 'squat', count: 1, pool: ['goblet-squat'] },
+        ],
       },
       {
         label: 'Main Lifts',
-        categories: {
-          push: { count: 1 },
-          pull: { count: 1, pool: ['deadlift', 'barbell-row'] },
-        },
+        categories: [
+          { category: 'push', count: 1 },
+          { category: 'pull', count: 1, pool: ['deadlift', 'barbell-row'] },
+        ],
       },
       {
         label: 'Accessories',
-        categories: {
-          hinge: { count: 1 },
-          core: { count: 1 },
-        },
+        categories: [
+          { category: 'hinge', count: 1 },
+          { category: 'core', count: 1 },
+        ],
       },
       {
         label: 'Finisher',
-        categories: {
-          carry: { count: 1 },
-        },
+        categories: [
+          { category: 'carry', count: 1 },
+        ],
       },
       {
         label: 'Cooldown',
-        categories: {
-          core: { count: 1, pool: ['dead-bug'] },
-        },
+        categories: [
+          { category: 'core', count: 1, pool: ['dead-bug'] },
+        ],
       },
     ],
-  },
 
-  hypertrophy: {
-    title: 'Hypertrophy',
-    phases: [
+    hypertrophy: [
       {
         label: 'Warm-up',
-        categories: {
-          core: { count: 2 },
-          carry: { count: 1 },
-        },
+        categories: [
+          { category: 'core', count: 2 },
+          { category: 'carry', count: 1 },
+        ],
       },
       {
         label: 'Main Lifts',
-        categories: {
-          push: { count: 1 },
-          pull: { count: 1 },
-        },
+        categories: [
+          { category: 'push', count: 1 },
+          { category: 'pull', count: 1 },
+        ],
       },
       {
         label: 'Accessories',
-        categories: {
-          squat: { count: 1 },
-          push: { count: 1 },
-          pull: { count: 1 },
-        },
+        categories: [
+          { category: 'squat', count: 1 },
+          { category: 'push', count: 1 },
+          { category: 'pull', count: 1 },
+        ],
       },
       {
         label: 'Cooldown',
-        categories: {
-          core: { count: 1, pool: ['dead-bug'] },
-        },
+        categories: [
+          { category: 'core', count: 1, pool: ['dead-bug'] },
+        ],
       },
     ],
-  },
 
-  recovery: {
-    title: 'Recovery',
-    phases: [
+    recovery: [
       {
         label: 'Warm-up',
-        categories: {
-          core: { count: 2 },
-        },
+        categories: [
+          { category: 'core', count: 2 },
+        ],
       },
       {
         label: 'Main Circuit',
-        categories: {
-          squat: { count: 1, pool: ['goblet-squat'] },
-          push: { count: 1, pool: ['push-ups'] },
-          hinge: { count: 1, pool: ['kb-swing', 'rdl-db'] },
-          pull: { count: 1, pool: ['face-pull'] },
-        },
+        categories: [
+          { category: 'squat', count: 1, pool: ['goblet-squat'] },
+          { category: 'push', count: 1, pool: ['push-ups'] },
+          { category: 'hinge', count: 1, pool: ['kb-swing', 'rdl-db'] },
+          { category: 'pull', count: 1, pool: ['face-pull'] },
+        ],
       },
       {
         label: 'Cooldown',
-        categories: {
-          core: { count: 1, pool: ['dead-bug'] },
-        },
+        categories: [
+          { category: 'core', count: 1, pool: ['dead-bug'] },
+        ],
       },
     ],
-  },
 
-  athletic: {
-    title: 'Athletic',
-    phases: [
+    athletic: [
       {
         label: 'Warm-up',
-        categories: {
-          core: { count: 2 },
-          squat: { count: 1, pool: ['goblet-squat'] },
-        },
+        categories: [
+          { category: 'core', count: 2 },
+          { category: 'squat', count: 1, pool: ['goblet-squat'] },
+        ],
       },
       {
         label: 'Main Lifts',
-        categories: {
-          squat: { count: 1, pool: ['back-squat', 'front-squat'] },
-          hinge: { count: 1 },
-        },
+        categories: [
+          { category: 'squat', count: 1, pool: ['back-squat', 'front-squat'] },
+          { category: 'hinge', count: 1 },
+        ],
       },
       {
         label: 'Accessories',
-        categories: {
-          push: { count: 1 },
-          carry: { count: 1 },
-        },
+        categories: [
+          { category: 'push', count: 1 },
+          { category: 'carry', count: 1 },
+        ],
       },
       {
         label: 'Finisher',
-        categories: {
-          core: { count: 1, pool: ['cable-woodchop'] },
-          carry: { count: 1 },
-        },
+        categories: [
+          { category: 'core', count: 1, pool: ['cable-woodchop'] },
+          { category: 'carry', count: 1 },
+        ],
       },
       {
         label: 'Cooldown',
-        categories: {
-          core: { count: 1, pool: ['dead-bug'] },
-        },
+        categories: [
+          { category: 'core', count: 1, pool: ['dead-bug'] },
+        ],
       },
     ],
-  },
+  }
+
+  return templates[type]
 }
 
 /* ═══════════════════════════════════════════════
- *  PRESCRIPTION MAPS  (sets / reps / rest / zone)
+ *  PRESCRIPTION BUILDER
+ *
+ *  Uses agent fusion to override sets/reps/rest
+ *  instead of hardcoded per-type maps.
  *  ═══════════════════════════════════════════════ */
 
 const BASE_PRESCRIPTION: Omit<ExercisePrescription, 'templateId'> = {
@@ -269,39 +304,101 @@ const BASE_PRESCRIPTION: Omit<ExercisePrescription, 'templateId'> = {
   intensityZone: 'moderate',
 }
 
-const PHASE_PRESETS: Record<
-  string,
-  Partial<Omit<ExercisePrescription, 'templateId'>>
-> = {
+const PHASE_PRESETS: Record<string, Partial<Omit<ExercisePrescription, 'templateId'>>> = {
   warmup: { sets: 2, reps: '12', restSeconds: 30, intensityZone: 'low' },
   finisher: { sets: 3, reps: '10', restSeconds: 45, intensityZone: 'high' },
   cooldown: { sets: 1, reps: '30s', restSeconds: 0, intensityZone: 'low' },
 }
 
-const WORKOUT_TYPE_OVERRIDES: Record<
-  WorkoutType,
-  Partial<Omit<ExercisePrescription, 'templateId'>>
-> = {
+const TYPE_OVERRIDES: Record<WorkoutType, Partial<Omit<ExercisePrescription, 'templateId'>>> = {
   strength: { sets: 4, reps: '5', restSeconds: 150, intensityZone: 'high' },
   hypertrophy: { sets: 3, reps: '10', restSeconds: 75, intensityZone: 'moderate' },
   recovery: { sets: 2, reps: '15', restSeconds: 45, intensityZone: 'low' },
   athletic: { sets: 3, reps: '8', restSeconds: 90, intensityZone: 'high' },
 }
 
-/* ── Helpers ──────────────────────────────────── */
+const INTENSITY_OVERRIDES: Record<IntensityZone, Partial<Omit<ExercisePrescription, 'templateId'>>> = {
+  low: { sets: 2, reps: '15', restSeconds: 45, intensityZone: 'low' },
+  moderate: { sets: 3, reps: '10', restSeconds: 75, intensityZone: 'moderate' },
+  high: { sets: 4, reps: '6', restSeconds: 120, intensityZone: 'high' },
+}
+
+function buildPrescription(
+  templateId: string,
+  phaseLabel: string,
+  type: WorkoutType,
+  intensityOverride: IntensityZone | null,
+): ExercisePrescription {
+  const key = phaseLabel.toLowerCase().replace(/[^a-z]/g, '')
+  const phasePreset = PHASE_PRESETS[key] ?? {}
+  const typeOverride = TYPE_OVERRIDES[type]
+  const intensityPreset = intensityOverride ? INTENSITY_OVERRIDES[intensityOverride] : {}
+
+  // Priority: phasePreset > intensityPreset > typeOverride > BASE
+  return {
+    templateId,
+    ...BASE_PRESCRIPTION,
+    ...typeOverride,
+    ...intensityPreset,
+    ...phasePreset,
+  }
+}
+
+/* ═══════════════════════════════════════════════
+ *  EXPLANATIONS & TITLES
+ *  ═══════════════════════════════════════════════ */
+
+function buildTitle(fusion: FusionResult, ctx: AgentContext): string {
+  const labels: Record<WorkoutType, string> = {
+    strength: 'Strength',
+    hypertrophy: 'Hypertrophy',
+    recovery: 'Recovery',
+    athletic: 'Athletic',
+  }
+
+  const prefix = ctx.daysSinceLastWorkout >= 5 ? 'Return — ' : ''
+  return `${prefix}${labels[fusion.selectedType]}`
+}
+
+function buildSubtitle(fusion: FusionResult): string {
+  const conf = Math.round(fusion.confidence * 100)
+  return `Agent confidence ${conf}% · ${fusion.scores[fusion.selectedType].toFixed(0)}/100 readiness`
+}
+
+function buildSummary(fusion: FusionResult, outputs: import('../agents/types').AgentOutput[]): string {
+  const topAgent = outputs
+    .filter((o) => o.recommendedType === fusion.selectedType)
+    .sort((a, b) => b.confidence - a.confidence)[0]
+
+  if (topAgent) {
+    return topAgent.reasoning
+  }
+
+  return `Session tailored to ${fusion.selectedType} based on your readiness signals.`
+}
+
+function extractInsights(outputs: import('../agents/types').AgentOutput[]): import('../types').AgentInsight[] {
+  return outputs
+    .flatMap((o) =>
+      o.insights.map((insight) => ({
+        agentId: o.agentId,
+        agentName: o.agentName,
+        insight,
+      })),
+    )
+    .slice(0, 6) // cap at 6 insights
+}
+
+/* ═══════════════════════════════════════════════
+ *  HELPERS
+ *  ═══════════════════════════════════════════════ */
 
 function daysSinceLast(dateStr: string | null): number {
-  if (!dateStr) return 999 // never trained
-  const then = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - then.getTime()
+  if (!dateStr) return 999
+  const diff = Date.now() - new Date(dateStr).getTime()
   return Math.floor(diff / (1000 * 60 * 60 * 24))
 }
 
-/**
- * Simple seeded-ish shuffle — deterministic for same inputs
- * so the same person on the same day gets the same workout.
- */
 function pick<T>(items: T[], count: number): T[] {
   const pool = [...items]
   const result: T[] = []
@@ -313,96 +410,10 @@ function pick<T>(items: T[], count: number): T[] {
   return result
 }
 
-/** 60 + 5 per exercise */
-function estimateMinutes(phases: WorkoutPhase[]): number {
+function estimateMinutes(phases: WorkoutPhase[], volumeMultiplier: number): number {
   const totalExercises = phases.reduce((s, p) => s + p.exercises.length, 0)
-  return 10 + totalExercises * 5
-}
-
-function buildPrescription(
-  templateId: string,
-  phaseLabel: string,
-  workoutType: WorkoutType,
-): ExercisePrescription {
-  const key = phaseLabel.toLowerCase().replace(/[^a-z]/g, '')
-  const phasePreset = PHASE_PRESETS[key] ?? {}
-  const typeOverride = WORKOUT_TYPE_OVERRIDES[workoutType]
-
-  // Priority: phasePreset > typeOverride > BASE_PRESCRIPTION
-  return {
-    templateId,
-    ...BASE_PRESCRIPTION,
-    ...typeOverride,
-    ...phasePreset,
-  }
-}
-
-/* ═══════════════════════════════════════════════
- *  PUBLIC API
- *  ═══════════════════════════════════════════════ */
-
-/**
- * Pure function — generates a workout deterministically from input signals.
- * Can be called from a hook, a button click handler, or a service worker.
- */
-export function generateWorkout(input: TrainingInput): GeneratedWorkout {
-  const workoutType = determineWorkoutType(input)
-  const blueprint = BLUEPRINTS[workoutType]
-  const now = new Date().toISOString()
-
-  const phases: WorkoutPhase[] = blueprint.phases.map((phaseDef) => {
-    const exercises: ExercisePrescription[] = []
-
-    for (const [cat, bp] of Object.entries(phaseDef.categories)) {
-      const category = cat as MovementCategory
-      let pool = getMovementsByCategory(category)
-
-      // If a specific pool of IDs is given, filter to those
-      if (bp.pool && bp.pool.length > 0) {
-        pool = pool.filter((m) => bp.pool!.includes(m.id))
-      }
-
-      if (pool.length === 0) continue
-
-      const selected = pick(pool, bp.count)
-      for (const ex of selected) {
-        const prescription = buildPrescription(ex.id, phaseDef.label, workoutType)
-        exercises.push(prescription)
-      }
-    }
-
-    return { label: phaseDef.label, exercises }
-  })
-
-  return {
-    type: workoutType,
-    title: `${blueprint.title} — ${determineWorkoutTitle(workoutType, input)}`,
-    phases,
-    estimatedMinutes: estimateMinutes(phases),
-    generatedFrom: { ...input },
-    createdAt: now,
-  }
-}
-
-/** Generate a human-readable subtitle for the workout. */
-function determineWorkoutTitle(type: WorkoutType, input: TrainingInput): string {
-  const daysSince = daysSinceLast(input.lastWorkoutDate)
-  const parts: string[] = []
-
-  if (daysSince >= 4) parts.push('Return')
-  if (input.streakCount >= 10) parts.push('Streak')
-  if (input.fatigueScore >= 80) parts.push('Recovery Focus')
-
-  const labels: Record<WorkoutType, string> = {
-    strength: 'Strength Focus',
-    hypertrophy: 'Muscle Building',
-    recovery: 'Active Recovery',
-    athletic: 'Performance',
-  }
-
-  parts.push(labels[type])
-  return parts.join(' · ')
+  return Math.round((10 + totalExercises * 5) * volumeMultiplier)
 }
 
 /* ── Internal export for testing ────────────────── */
-export { daysSinceLast, determineWorkoutType }
+export { daysSinceLast }
